@@ -1,18 +1,20 @@
 // ==UserScript==
-// @name         ChatChain Translation
+// @name         ChatChain
 // @namespace    ChatChain
 // @version      1.0
-// @description  Translate input to English on ChatChain with Google Translate
-// @author       OpenAI + Translation API by xinjie
+// @description  works like langchain but with ChatGPT(WIP), only support Translate input to English on ChatChain with Google Translate now
+// @author       temberature@gmail.com
 // @match        https://chat.openai.com/*
 // @grant        GM_xmlhttpRequest
 // @run-at       document-idle
+// @license      MIT
 // ==/UserScript==
 
 (function () {
     'use strict';
     let monitorReply2TranslateBack = false, monitorReply2quest = false;
-    let form, submitButton, inputField;
+    let translateMode = true;
+    let form, submitButton, inputField, submitButtonClone, inputFieldClone;
     interceptSubmitBtn();
 
     const observer = new MutationObserver(mutations => {
@@ -20,14 +22,16 @@
             if (mutation.type === 'childList') {
                 console.log(mutation.addedNodes)
                 mutation.addedNodes.forEach(addedNode => {
-                    if (addedNode.nodeType === Node.ELEMENT_NODE && ((addedNode.classList.contains('overflow-hidden') && addedNode.classList.contains('w-full') && addedNode.classList.contains('h-full') && addedNode.classList.contains('relative')) || addedNode.classList.contains('px-2') &&
+                    if (addedNode.nodeType === Node.ELEMENT_NODE && ((addedNode.classList.contains('overflow-hidden') && addedNode.classList.contains('w-full') && addedNode.classList.contains('h-full') && addedNode.classList.contains('relative')))) {
+                        interceptSubmitBtn();
+                    }
+                    if (addedNode.nodeType === Node.ELEMENT_NODE && (addedNode.classList.contains('px-2') &&
                         addedNode.classList.contains('py-10') &&
                         addedNode.classList.contains('relative') &&
                         addedNode.classList.contains('w-full') &&
                         addedNode.classList.contains('flex') &&
                         addedNode.classList.contains('flex-col') &&
-                        addedNode.classList.contains('h-full'))  ) {
-
+                        addedNode.classList.contains('h-full'))) {
 
                         interceptSubmitBtn();
 
@@ -45,7 +49,7 @@
                         if (monitorReply2quest) {
                             quest(lastProseElement.textContent);
 
-                        } else if(monitorReply2TranslateBack) {
+                        } else if (monitorReply2TranslateBack) {
                             translateBack(lastProseElement.textContent);
                         }
                     }
@@ -64,36 +68,18 @@
     };
 
     function interceptSubmitBtn() {
+
         form = document.querySelector('form.stretch');
         submitButton = form.querySelector('div div:nth-child(2) > button');
         inputField = form.querySelector('div:nth-child(2) textarea');
         // 拦截表单提交事件，翻译输入内容并替换输入框中的内容
-        if(!submitButton || !inputField) {
+        if (!submitButton || !inputField) {
             return;
         }
-        submitButton.addEventListener('click', async (event) => {
-            const stage = submitButton.getAttribute('data-stage')
-            if(stage && stage != 0) {
-                return;
-            }
-            event.preventDefault();
-            if (!stage) {
-                batch();
-            }
 
-        });
+        submitButton.addEventListener('click', handleSubmit, { useCapture: true });
 
-        inputField.addEventListener("keydown", async function (event) {
-            if (event.key === "Enter") {
-                if (!+submitButton.getAttribute('data-translating')) {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                } else {
-                    return;
-                }
-                await translate();
-            }
-        });
+        inputField.addEventListener("keydown", handleEnterDown, { useCapture: true });
         inputField.addEventListener("keyup", async function (event) {
             if (event.key === "Enter") {
                 event.preventDefault();
@@ -109,27 +95,49 @@
 
 
     }
-    function batch() {
-        if (!monitorReply2quest && !monitorReply2TranslateBack) {
-            translate();
+    async function handleEnterDown(event) {
+        if (event.key === "Enter") {
+            handleSubmit(event);
+        }
+    }
+    async function handleSubmit(event) {
+        const stage = submitButton.getAttribute('data-stage')
+        const texts = inputField.value.split('|');
+
+        if ((stage && stage != 0) || !translateMode) {
+            return;
+        } else if (texts.length > 1 && ['默认模式', 'default', 'd'].includes(texts[0])) {
+            inputField.value = texts[1];
+            return;
+        } else if (texts.length > 1 && ['切换模式', 'toggle', 't'].includes(texts[0])) {
+            translateMode = !translateMode;
+            inputField.value = texts[1];
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!+stage) {
+            if (!monitorReply2quest && !monitorReply2TranslateBack) {
+                translate();
+            }
         }
 
     }
 
-    function translate() {
+    async function translate() {
         submitButton.setAttribute('data-stage', 'translating');
 
         const inputText = inputField.value.trim();
         if (inputText.length === 0) {
             return;
         }
-        // inputField.value = "翻译中ing";
-        // const translatedText = await translateText(inputText);
-        inputField.value = '翻译成英文，只返回英文： "' + inputText + '"';
+        inputField.value = "翻译中ing";
+        const translatedText = await translateText(inputText);
+        inputField.value = translatedText;
 
         submitButton.click();
 
-        monitorReply2quest = true;
+        monitorReply2TranslateBack = true;
     }
 
     function quest(reply) {
